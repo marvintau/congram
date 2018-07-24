@@ -1,42 +1,16 @@
-# -*- encoding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 import os
 import sys
-import time
 import itertools
 import numpy as np
 
-def flatten(l):
-    return list(itertools.chain.from_iterable(l))
+from color_schemes import color_func
 
-def group_by(lis, func):
-    groups = itertools.groupby(lis, func)
-    return [list(dat) for dat in groups]
 
 def get_term_size():
     rows, columns = os.popen('stty size', 'r').read().split()
     return int(rows), int(columns)
-
-color_func = {
-    "BlueGreenYellow" : lambda (x):Color(
-        int((0.14628343 - 0.61295736*x + 1.36894882*x*x)*127),
-        int((0.01872288 + 1.65862067*x - 0.8011199 *x*x)*127),
-        int((0.42712882 + 0.5047786 *x - 0.61649645*x*x)*127)
-    ),
-    "Sandy": lambda x:Color(
-        int(( 0.60107395 + 1.63435499*x - 1.9800948 *x*x)*127),
-        int(( 0.25372145 + 1.98482627*x - 1.93612357*x*x)*127),
-        int(( 0.20537569 + 0.42332151*x - 0.47753999*x*x)*127)
-    ),
-    "Plum" : lambda x:Color(
-        int((0.136180 + 0.775009*x + -0.133166*x*x)*127),
-        int((0.036831 + 0.040629*x + 0.781372*x*x)*127),
-        int((-0.087716 + 1.345565*x + -0.743961*x*x)*127)
-    )
-}
-
-def ranged_color(color_func, val, minval, maxval):
-    return color_func((val-minval)/(maxval-minval))
 
 
 class Pos:
@@ -50,30 +24,10 @@ class Pos:
     def __mul__(self, pos_time):
         if type(pos_time) is tuple:
             return Pos(self.row * pos_time[0], self.col * pos_time[1])
-        else:
-            return Pos(self.row * pos_time.row, self.col * pos_time.col)
+        return Pos(self.row * pos_time.row, self.col * pos_time.row)
 
     def __str__(self):
         return "{%d, %d}" % (self.row, self.col)
-
-    def t(self):
-        return Pos(self.col, self.row)
-
-    def corners(self):
-        return [Pos(0, 0),               Pos(self.row, 0),
-                Pos(self.row, self.col), Pos(0, self.col)]
-
-    def center(self):
-        return Pos(int(round(self.row*0.5)), int(round(self.col*0.5)))
-
-    # check if pos is on bottom-right side of self. Used for checking a rect is
-    # enclosed by another.
-    def deeper_than(self, pos):
-        return self.row >= pos.row and self.col >= pos.col
-
-def size(l):
-    return Pos(len(l), len(l[0]))
-
 
 class Color:
     def __init__(self, r, g, b):
@@ -94,8 +48,8 @@ class Color:
     def __mul__(self, inc):
         if type(inc) == tuple and len(inc) == 3:
             return Color(self.r * inc[0], self.g * inc[1], self.b * inc[2])
-        elif type(inc) == int:
-            return Color(self.r * inc, self.g * inc, self.b * inc)
+        elif type(inc) == float:
+            return Color(int(self.r * inc), int(self.g * inc), int(self.b * inc))
         else:
             raise TypeError("operand type must be either 3-tuple or int")
 
@@ -103,17 +57,15 @@ class Color:
         return "{%d, %d, %d}" % (self.r, self.g, self.b)
 
 class CharColor:
-    def __init__(self, fore=None, back=None):
+    def __init__(self, fore, back=None):
 
-        if fore is None:
-            self.fore = Color(0, 0, 0)
-        elif type(fore) == tuple and len(fore) == 3:
+        if type(fore) == tuple and len(fore) == 3:
             self.fore = Color(*fore)
         else:
             self.fore = fore
 
-        if back is None:
-            self.back = Color(0, 0, 0)
+        if back == None :
+            self.back = Color(0,0,0)
         elif type(back) == tuple and len(back) == 3:
             self.back = Color(*back)
         else:
@@ -140,7 +92,7 @@ class CharColor:
                 return CharColor(self.fore * inc, self.back * inc)
             else:
                 raise TypeError("operand type must be either 3-tuple or 2-tuple")
-        elif type(inc) is int:
+        elif type(inc) is float:
             return CharColor(self.fore * inc, self.back * inc)
         else:
             raise TypeError("operand type must be tuple")
@@ -150,8 +102,8 @@ class CharColor:
 
 class Rect:
     """
-    一个Rect对象包含了绘制屏幕上一块着色区域的信息，以及包含在这个区域内的所有
-    子元素的信息。
+    Rect: Draw a rectangle area with given fore/back color and text content
+          records position, size, color and content only.
     """
 
     def __init__(self, pos, color, text):
@@ -159,7 +111,6 @@ class Rect:
         self.pos   = pos
         self.color = color
         self.text  = text
-
 
 
 class Canvas:
@@ -178,36 +129,31 @@ class Canvas:
         if anchor is None:
             anchor = Pos(self.current_line, (self.cols - len(text)) / 2)
 
-        color = color * (2,1)
+        color = color * (0.5, 1.)
         self.add_empty_line(anchor)
         self.elems.append(Rect(anchor, color, text))
 
         self.current_line += 2
 
     def add_empty_line(self, pos):
-        self.elems.append(Rect(Pos(pos.row, 0), CharColor(), " "*self.cols))
+        self.elems.append(Rect(Pos(pos.row, 0), CharColor((0,0,0)), " "*self.cols))
 
 
     def add_frame(self, size, anchor,
                   sides=("left", "right", "top", "bottom"),
-                  frame_margin = Pos(3, 5),
                   x_tick_range=None,
                   y_tick_range=None,
-                  rep=None,
+                  x_rep=None,
+                  y_rep=None,
                   x_off=None,
                   y_off=None):
         color = CharColor((255, 255, 255))
 
-        # 四面边框和中间内容距离之和，比如如果左边距为1，上边距为2，则以下边距
-        # 应该为(1*2+1, 2*2+1) = (3, 5)，考虑到等宽字体的宽高比例，这个比例是刚
-        # 刚好的.
-
-        size = size + frame_margin
         for l in range(size.row+1):
             self.add_empty_line(Pos(l, 0) + anchor)
             tick_char =  u"│"
-            if x_off is not None and rep.col is not None:
-                if (l + x_off) % rep.col == 0:
+            if x_off is not None and x_rep is not None:
+                if (l + x_off) % x_rep == 0:
                     tick_char = u"├"
             if "left" in sides:
                 self.elems.append(Rect(Pos(l, 0)+anchor, color, tick_char))
@@ -216,106 +162,75 @@ class Canvas:
 
         for l in range(1,size.col):
             tick_char =  u"─"
-            if y_off is not None and rep.row is not None:
-                if (l + y_off) % rep.row == 0:
+            if y_off is not None and y_rep is not None:
+                if (l + y_off) % y_rep == 0:
                     tick_char = u"┴"
             if "top" in sides:
                 self.elems.append(Rect(Pos(0, l)+anchor, color, u"─"))
             if "bottom" in sides:
                 self.elems.append(Rect(Pos(size.row, l)+anchor, color, tick_char))
 
-        for corner, char in zip(size.corners(), [u"┌", u"└", u"┘", u"┐"]):
-            self.elems.append(Rect(anchor+corner, color, char))
+        self.elems.append(Rect(anchor, color, u"┌"))
+        self.elems.append(Rect(anchor+Pos(size.row, 0), color, u"└"))
+        self.elems.append(Rect(anchor+Pos(size.row, size.col), color, u"┘"))
+        self.elems.append(Rect(anchor+Pos(0, size.col), color, u"┐"))
 
-    def add_cell(self, cell, size, color, anchor):
+    def add_grid(self, table, color_func, anchor=None):
 
-        """
-        添加一个单元（可用于heatmap或其他表格）
-        cell:   单元格内容
-        size:   单元格长宽
-        color:  单元格颜色
-        anchor: 锚点
-        """
-        cell = cell.rjust(size.col)
+        cell_size = 0
 
-        # 在若干行连续画长度为size.col的小色块，在中间那行写字
-        for l in range(size.row):
-            string = cell if l == size.row//2 else "".rjust(len(cell))
-            self.elems.append(Rect(anchor + Pos(l, 0), color, string))
+        min_cell = min([min(c) for c in table])
+        max_cell = max([max(c) for c in table])
 
-        return size
+        # Get reformed string and calculate max length
+        for row in table:
+            for cell in row:
+                try:
+                    new_cell = "%1.2f" % cell
+                except TypeError:
+                    new_cell = cell
 
-    def add_grid(self, table, cell_size, color_func, anchor=None):
-
-        for [row_num, row] in enumerate(table):
-            for [col_num, (cell, color)] in enumerate(row):
-                pos = anchor + Pos(row_num, col_num) * cell_size
-                self.add_cell(cell, cell_size, color, pos)
-
-        return cell_size * Pos(row_num, col_num)
-
-    def add_heatmap(self, table, color_func,
-                    thermo=False,
-                    draw_frame=False,
-                    anchor=None):
-
-        table_size = size(table)
-        flat       = flatten(table)
-        min_cell   = min(flat)
-        max_cell   = max(flat)
+                if cell_size < len(new_cell):
+                    cell_size = len(new_cell)
+        cell_size += 2
 
 
-        # 生成一个新的带颜色的表格，顺便获得最长单元格字符串的长度,
-        # generate colored table along with the max length of string
-        colored_table = []
-        cell_len      = 0
-
-        for lis in table:
-            colored_table.append([])
-
-            for cell in lis:
-                cell_str   = " %1.2f " % cell
-                cell_bc    = ranged_color(color_func, cell, min_cell, max_cell)
-                cell_color = CharColor(cell_bc+127, cell_bc)
-                colored_table[-1].append((cell_str, cell_color))
-
-                if cell_len < len(cell_str):
-                    cell_len = len(cell_str)
-        cell_size  = Pos(3, cell_len)
-
-
-        frame_margin = Pos(3, 5)
-
-        # 如果没有指定锚点则默认对齐到画布中间
-        # if anchor is not specified, then align to the center of canvas
         if anchor is None:
-            frame_offset = frame_margin.center().col
-            actual_left = (self.cols - len(table[0]) * cell_len) / 2
-            anchor = Pos(self.current_line, actual_left)
+            anchor = Pos(self.current_line, (self.cols - len(table[0]) * cell_size - 7) / 3)
+
+        self.add_frame(Pos(len(table)*3+3, len(table[0])*cell_size+5), anchor,
+                       x_rep=3, x_off=0, y_rep=cell_size, y_off=0)
+
+        def add_cell(cell, anchor, pos, isBlank=False):
+
+            pos   = pos * (1, cell_size) + anchor + Pos(0, 2)
+            back  = color_func((cell-min_cell)/(max_cell-min_cell))
+            color = CharColor(back, back) * (1., 0.5)
+
+            cell = "" if isBlank else "%1.2f" % cell if type(cell) is float else cell
+            cell = cell.rjust(cell_size - 2)
+
+            self.elems.append(Rect(pos, color, " " + cell + " "))
 
 
-        # 画边框，并决定单元格的起始位置
-        # Draw the frame, and also decide where cells starts
-        # if draw_frame is True:
-        frame_size = self.add_frame(table_size * cell_size, anchor,
-                    frame_margin=frame_margin,
-                    rep=cell_size.t(), x_off=0, y_off=0)
-        cell_anchor = anchor + frame_margin.center()
-        # 画单元格
-        # draw each cell
-        self.add_grid(colored_table, cell_size, color_func, cell_anchor)
-
-        return frame_size
+        # Add each cell into element table
+        # and calculates the max cell length
+        cell_anchor = anchor + Pos(2, 1)
+        for [row_num, row] in enumerate(table):
+            for [col_num, cell] in enumerate(row):
+                add_cell(cell, cell_anchor, Pos(row_num*3+0, col_num), True)
+                add_cell(cell, cell_anchor, Pos(row_num*3+1, col_num))
+                add_cell(cell, cell_anchor, Pos(row_num*3+2, col_num), True)
 
         # Add a thermometer on the right side
-#        thermo_left = len(table[0]) * cell_size.col + 10
-#        for line in range(1, len(table) * 3 + 6):
-#            pos = Pos(line, thermo_left) + anchor
-#            back = color_func(1.0 - 1.0 * line / (len(table) * 3+3))
-#            color = CharColor(Color(0, 0, 0), back)
-#            self.elems.append(Rect(pos, color, "    "))
-#
-#        self.current_line += len(table)*3 + 4
+        thermo_left = len(table[0]) * cell_size + 10
+        for line in range(1, len(table) * 3 + 6):
+            pos = Pos(line, thermo_left) + anchor
+            back = color_func(1.0 - 1.0 * line / (len(table) * 3+3))
+            color = CharColor(Color(0, 0, 0), back)
+            self.elems.append(Rect(pos, color, "    "))
+
+        self.current_line += len(table)*3 + 4
 
     def add_hist(self, hist, color_func, anchor=None):
 
@@ -388,7 +303,7 @@ class Canvas:
             # list flatten operation by itertools.chain flatten both list and
             # tuple (and all iterables), thus we have to coat it with one more
             # tuple in order to maintain the form.
-            visible_parts = flatten(visible_parts)
+            visible_parts = list(itertools.chain.from_iterable(visible_parts))
 
         visible_parts = sorted(visible_parts, key=lambda x:x[0])
 
@@ -410,8 +325,7 @@ class Canvas:
     def render(self, is_reset=False):
         sys.stdout.flush()
         sys.stdout.write("\n")
-
-        for line in range(self.rows-1):
+        for line in range(self.rows):
             self.render_line(line, is_reset)
 
     def stroke(self, text, c):
@@ -426,13 +340,11 @@ class Canvas:
 
 
 if __name__ == "__main__":
-    curr_time = time.time()
     c = Canvas()
     grid = np.random.random_sample(((7, 10)))
     hist = np.random.random_sample(((15, 1)))
     c.add_text("This is a heatmap example", CharColor(color_func["Plum"](0.9)))
-    c.add_heatmap(grid.tolist(), color_func["Plum"])
-    # c.add_text("This is a histogram example", CharColor(color_func["BlueGreenYellow"](0.9)))
-    print time.time() - curr_time
+    c.add_grid(grid.tolist(), color_func["Plum"])
+    c.add_text("This is a histogram example", CharColor(color_func["BlueGreenYellow"](0.9)))
     #c.add_hist(grid.tolist(), color_func["BlueGreenYellow"])
     c.render(True)
