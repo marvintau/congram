@@ -9,9 +9,9 @@ import numpy as np
 def flatten(l):
     return list(itertools.chain.from_iterable(l))
 
-def group_by(lis, func):
-    groups = itertools.groupby(lis, func)
-    return [list(dat) for dat in groups]
+def group_by(lis, key):
+    groups = itertools.groupby(sorted(lis, key=key), key)
+    return [list(dat) for _, dat in groups]
 
 def get_term_size():
     rows, columns = os.popen('stty size', 'r').read().split()
@@ -338,13 +338,13 @@ class Canvas:
 
         self.current_line += 30
 
-    def render_line(self, line_num, is_reset=False):
+    def render_line(self, elems_inline, is_reset=False):
         """
         render elements in single line
         """
 
         # Find all elements to be rendered in current line
-        elems_inline = [elem for elem in self.elems if elem.pos.row == line_num]
+        # elems_inline = [elem for elem in self.elems if elem.pos.row == line_num]
 
         visible_parts = []
 
@@ -411,8 +411,10 @@ class Canvas:
         sys.stdout.flush()
         sys.stdout.write("\n")
 
-        for line in range(self.rows-1):
-            self.render_line(line, is_reset)
+        render_lines = group_by(self.elems, lambda elem: elem.pos.row)
+
+        for line_elems in render_lines:
+            self.render_line(line_elems, is_reset)
 
     def stroke(self, text, c):
 
