@@ -138,7 +138,7 @@ class Stroke:
 
         if is_from_left:
             trunced = len(self.text) - num
-            return Stroke(self.pos + Pos(0, num), self.text[trunced:], self.color)
+            return Stroke(self.pos + Pos(0, trunced), self.text[trunced:], self.color)
         else:
             return Stroke(self.pos, self.text[:num], self.color)
 
@@ -160,8 +160,8 @@ class Stroke:
         if dodged: # dodged
             return [self]
         else:
-            left = () if l_shaded else self.trunc(next_l - self_l, is_from_left=False)
-            right = () if  r_shaded else self.trunc(self_r - next_r, is_from_left=True)
+            left  = () if l_shaded else self.trunc(next_l - self_l, is_from_left=False)
+            right = () if r_shaded else self.trunc(self_r - next_r, is_from_left=True)
             return [left, right]
 
     def __str__(self):
@@ -248,6 +248,7 @@ class Rect:
         for line in strokes:
             for rs in sorted(line, key=lambda rs:rs.pos.col):
                 sys.stdout.write(str(rs))
+                #sys.stdout.write("(%d, %d)" % (rs.pos.col, rs.pos.col + len(rs.text)))
             sys.stdout.write('\n')
 
 
@@ -259,9 +260,7 @@ class Rect:
 #for l in lis:
 #    sys.stdout.write(str(l))
 
-rect1 = Rect(Pos(0,0), Pos(20, 20), "aaaaaa", CharColor((0,0,0), (127, 127, 127)))
-rect2 = Rect(Pos(1,1), Pos(10, 10), "aaaaaa", CharColor((0,0,0), (240, 240, 240)))
-rect3 = Rect(Pos(15,1), Pos(3, 10), "aaaaaa", CharColor((0,0,0), (240, 240, 240)))
+rect1 = Rect(Pos(0,0), Pos(20, 30), "aaaaaa", CharColor((0,0,0), (127, 127, 127)))
+rect2 = Rect(Pos(1,1), Pos(18, 28), "aaaaaa", CharColor((0,0,0), (240, 240, 240)))
 rect1.add_child(rect2)
-rect1.add_child(rect3)
 rect1.draw()
