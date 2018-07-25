@@ -4,7 +4,12 @@ import sys
 import itertools
 
 def flatten(l):
-    return list(itertools.chain.from_iterable(l))
+    if l == []:
+        return []
+    elif not isinstance(l[0], list):
+        return l
+    else:
+        return list(itertools.chain.from_iterable(l))
 
 def group_by(lis, key):
     groups = itertools.groupby(sorted(lis, key=key), key)
@@ -120,7 +125,7 @@ class CharColor:
         return str(self.fore) + " " + str(self.back)
 
 
-class RenderString:
+class Stroke:
     def __init__(self, pos, text, color):
         self.pos = pos
         self.color = color
@@ -133,13 +138,13 @@ class RenderString:
 
         if is_from_left:
             trunced = len(self.text) - num
-            return RenderString(self.pos + Pos(0, num), self.text[trunced:], self.color)
+            return Stroke(self.pos + Pos(0, num), self.text[trunced:], self.color)
         else:
-            return RenderString(self.pos, self.text[:num], self.color)
+            return Stroke(self.pos, self.text[:num], self.color)
 
     def shaded_by(self, next):
 
-        # 讨论next（另一个RenderString）对自己遮挡的情况，先获取两个对象的左右
+        # 讨论next（另一个Stroke）对自己遮挡的情况，先获取两个对象的左右
         # 边界。首先考虑互不遮挡的情况，即next右边界在self左边界的左边，或者next
         # 左边界在self右边界的右边。若不是这种情况，则当next左边界在self左边界右边
 
@@ -153,7 +158,7 @@ class RenderString:
         dodged   = self.pos.row != next.pos.row or next_r < self_l or next_l > self_r
 
         if dodged: # dodged
-            return self
+            return [self]
         else:
             left = () if l_shaded else self.trunc(next_l - self_l, is_from_left=False)
             right = () if  r_shaded else self.trunc(self_r - next_r, is_from_left=True)
@@ -194,36 +199,69 @@ class Rect:
 
     def render(self, pos):
 
-        rect_rss = []
+        strokes = []
 
+        # 以下是当前Rect生成的Stroke.
         for line in range(self.size.row):
-            render_text = self.text if line == int(round(self.size.row*0.5))-1 else "".rjust(len(self.text))
-            rect_rss.append(RenderString(self.pos + pos + Pos(line, 0), render_text, self.color))
+            if line == int(round(self.size.row*0.5)) - 1:
+                stroke_text = self.text.center(self.size.col, " ")
+            else:
+                stroke_text = "".ljust(self.size.col, " ")
+            stroke_pos = self.pos + pos + Pos(line, 0)
+            strokes.append([Stroke(stroke_pos, stroke_text, self.color)])
 
-        for elem in self.children:
-            elem_rss = elem.render(pos)
-            rect_rss = [rect_rs.shaded_by(elem_rs) for rect_rs in rect_rss for elem_rs in elem_rss]
+        # 以下是Rect的子元素的Stroke，由于子元素之间也存在遮挡问题，因此在
+        # 一次迭代内解决。由于子元素遮挡顺序由添加至children的顺序体现因此
+        # 这个顺序相当于先处理Rect所有子元素中先插入的（也就是压在下面的）
+        # 元素的遮挡情况.
 
-        return rect_rss
+        for child in self.children:
+            child_strokes = child.render(self.pos + pos)
+
+            for idx, line in enumerate(range(self.pos.row, self.size.row + self.pos.row)):
+
+                # 当前行起始时只有Rect自己的stroke
+                strokes_line = strokes[idx]
+
+                # 将每个子元素中同一行的stroke比较一下，最后加入子元素当前行
+                # stroke要加一层list是为了之后的flatten操作
+                for child_stroke in child_strokes:
+                    if child_stroke.pos.row == line:
+                        strokes_line = [s.shaded_by(child_stroke) for s in strokes_line]
+                        strokes_line.append([child_stroke])
+
+                # 将flatten过的strokes_line塞回strokes对应的行中
+                strokes[idx] = [s for s in flatten(strokes_line) if s != ()]
+
+        # 执行完以上循环的strokes是一个list， 里面每个元素是处理完每一个子
+        # 元素的遮挡后的strokes。它需要再flatten一次才能成为一维表返回上一
+        # 级调用
+
+        return flatten(strokes)
 
     def draw(self):
-        rss = self.render(Pos(0, 0))
 
-        rss = group_by(rss, lambda rs:rs.pos.row)
+        # 绘制这个Rect，先获取它的strokes，按行数group_by
+        strokes = self.render(Pos(0, 0))
+        strokes = group_by(strokes, lambda rs:rs.pos.row)
 
-        for line in rss:
+        for line in strokes:
             for rs in sorted(line, key=lambda rs:rs.pos.col):
                 sys.stdout.write(str(rs))
-            sys.stdout.write("\n")
+            sys.stdout.write('\n')
 
 
-#rs1 = RenderString(Pos(1, 5), "123456789", CharColor((255,255,254), (127,127,127)))
-#rs2 = RenderString(Pos(1, 6), "  ", CharColor((255,255,254)))
+#rs1 = Stroke(Pos(1, 5), "123456789", CharColor((255,255,254), (127,127,127)))
+#rs2 = Stroke(Pos(1, 6), "  ", CharColor((255,255,254)))
 #lis = rs1.shaded_by(rs2)
 #lis.append(rs2)
 #lis.sort(key=lambda e:e.pos.col)
 #for l in lis:
 #    sys.stdout.write(str(l))
 
-rect1 = Rect(Pos(0,0), Pos(5, 5), "||  |", CharColor((0,0,0), (127, 127, 127)))
+rect1 = Rect(Pos(0,0), Pos(20, 20), "aaaaaa", CharColor((0,0,0), (127, 127, 127)))
+rect2 = Rect(Pos(1,1), Pos(10, 10), "aaaaaa", CharColor((0,0,0), (240, 240, 240)))
+rect3 = Rect(Pos(15,1), Pos(3, 10), "aaaaaa", CharColor((0,0,0), (240, 240, 240)))
+rect1.add_child(rect2)
+rect1.add_child(rect3)
 rect1.draw()
