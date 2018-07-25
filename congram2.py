@@ -221,17 +221,15 @@ class Rect:
             for idx, line in enumerate(range(self.pos.row, self.size.row + self.pos.row)):
 
                 # 当前行起始时只有Rect自己的stroke
-                strokes_line = strokes[idx]
-
                 # 将每个子元素中同一行的stroke比较一下，最后加入子元素当前行
                 # stroke要加一层list是为了之后的flatten操作
                 for child_stroke in child_strokes:
                     if child_stroke.pos.row == line:
-                        strokes_line = [s.shaded_by(child_stroke) for s in strokes_line]
-                        strokes_line.append([child_stroke])
+                        strokes[idx] = [s.shaded_by(child_stroke) for s in strokes[idx]]
+                        strokes[idx].append([child_stroke])
 
-                # 将flatten过的strokes_line塞回strokes对应的行中
-                strokes[idx] = [s for s in flatten(strokes_line) if s != ()]
+                    # 将flatten过的strokes_line塞回strokes对应的行中
+                    strokes[idx] = [s for s in flatten(strokes[idx]) if s != ()]
 
         # 执行完以上循环的strokes是一个list， 里面每个元素是处理完每一个子
         # 元素的遮挡后的strokes。它需要再flatten一次才能成为一维表返回上一
@@ -261,6 +259,9 @@ class Rect:
 #    sys.stdout.write(str(l))
 
 rect1 = Rect(Pos(0,0), Pos(20, 30), "aaaaaa", CharColor((0,0,0), (127, 127, 127)))
-rect2 = Rect(Pos(1,1), Pos(18, 28), "aaaaaa", CharColor((0,0,0), (240, 240, 240)))
+rect2 = Rect(Pos(1,1), Pos(18, 28), "aaaaaa", CharColor((0,0,0), (200, 200, 200)))
+rect3 = Rect(Pos(1,1), Pos(16, 26), "aaaaaa", CharColor((0,0,0), (255, 255, 255)))
+
+rect2.add_child(rect3)
 rect1.add_child(rect2)
 rect1.draw()
