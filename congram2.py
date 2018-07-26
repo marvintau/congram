@@ -1,7 +1,11 @@
 # -*- encoding: utf-8 -*-
 
+import os
 import sys
 import itertools
+import time
+
+import numpy as np
 
 def flatten(l):
     if l == []:
@@ -14,6 +18,34 @@ def flatten(l):
 def group_by(lis, key):
     groups = itertools.groupby(sorted(lis, key=key), key)
     return [list(dat) for _, dat in groups]
+
+
+color_func = {
+    "BlueGreenYellow" : lambda (x):Color(
+        int((0.14628343 - 0.61295736*x + 1.36894882*x*x)*127),
+        int((0.01872288 + 1.65862067*x - 0.8011199 *x*x)*127),
+        int((0.42712882 + 0.5047786 *x - 0.61649645*x*x)*127)
+    ),
+    "Sandy": lambda x:Color(
+        int(( 0.60107395 + 1.63435499*x - 1.9800948 *x*x)*127),
+        int(( 0.25372145 + 1.98482627*x - 1.93612357*x*x)*127),
+        int(( 0.20537569 + 0.42332151*x - 0.47753999*x*x)*127)
+    ),
+    "Plum" : lambda x:Color(
+        int((0.136180 + 0.775009*x + -0.133166*x*x)*127),
+        int((0.036831 + 0.040629*x + 0.781372*x*x)*127),
+        int((-0.087716 + 1.345565*x + -0.743961*x*x)*127)
+    )
+}
+
+def full_color(color_scheme_name, val, minval, maxval):
+    normed_val = (val-minval)/(maxval-minval)
+    color = color_func[color_scheme_name](normed_val)
+    return CharColor(color*2, color)
+
+
+def ranged_color(color_func, val, minval, maxval):
+    return color_func((val-minval)/(maxval-minval))
 
 class Pos:
     def __init__(self, row, col):
@@ -159,10 +191,16 @@ class Stroke:
 
         if dodged: # dodged
             return [self]
+        elif l_shaded and r_shaded:
+            return []
+        elif not (l_shaded or r_shaded):
+            return [self.trunc(next_l - self_l, is_from_left=False),
+                    self.trunc(self_r - next_r, is_from_left=True)]
         else:
-            left  = () if l_shaded else self.trunc(next_l - self_l, is_from_left=False)
-            right = () if r_shaded else self.trunc(self_r - next_r, is_from_left=True)
-            return [left, right]
+            if l_shaded:
+                return [self.trunc(self_r - next_r, is_from_left=True)]
+            if r_shaded:
+                return [self.trunc(next_l - self_l, is_from_left=False)]
 
     def __str__(self):
 
@@ -180,7 +218,14 @@ class Stroke:
 
 class Rect:
 
-    def __init__(self, pos, size, text, color):
+    render_time = 0
+    render_count = 0
+
+    def __init__(self,
+                 pos=Pos(0, 0),
+                 size=Pos(10, 20),
+                 text="text",
+                 color=CharColor((127, 127, 127), (240, 240, 240))):
 
         self.pos   = pos
         self.size  = size
@@ -208,60 +253,110 @@ class Rect:
             else:
                 stroke_text = "".ljust(self.size.col, " ")
             stroke_pos = self.pos + pos + Pos(line, 0)
-            strokes.append([Stroke(stroke_pos, stroke_text, self.color)])
-
-        # 以下是Rect的子元素的Stroke，由于子元素之间也存在遮挡问题，因此在
-        # 一次迭代内解决。由于子元素遮挡顺序由添加至children的顺序体现因此
-        # 这个顺序相当于先处理Rect所有子元素中先插入的（也就是压在下面的）
-        # 元素的遮挡情况.
+            strokes.append(Stroke(stroke_pos, stroke_text, self.color))
 
         for child in self.children:
-            child_strokes = child.render(self.pos + pos)
+            strokes.extend(child.render(self.pos + pos))
 
-            for idx, line in enumerate(range(self.pos.row, self.size.row + self.pos.row)):
-
-                # 当前行起始时只有Rect自己的stroke
-                # 将每个子元素中同一行的stroke比较一下，最后加入子元素当前行
-                # stroke要加一层list是为了之后的flatten操作
-                for child_stroke in child_strokes:
-                    if child_stroke.pos.row == line:
-                        strokes[idx] = [s.shaded_by(child_stroke) for s in strokes[idx]]
-                        strokes[idx].append([child_stroke])
-
-                    # 将flatten过的strokes_line塞回strokes对应的行中
-                    strokes[idx] = [s for s in flatten(strokes[idx]) if s != ()]
-
-        # 执行完以上循环的strokes是一个list， 里面每个元素是处理完每一个子
-        # 元素的遮挡后的strokes。它需要再flatten一次才能成为一维表返回上一
-        # 级调用
-
-        return flatten(strokes)
+        return strokes
 
     def draw(self):
 
-        # 绘制这个Rect，先获取它的strokes，按行数group_by
         strokes = self.render(Pos(0, 0))
         strokes = group_by(strokes, lambda rs:rs.pos.row)
 
         for line in strokes:
-            for rs in sorted(line, key=lambda rs:rs.pos.col):
+            curr_line = [line[0]]
+            for next_stroke in line[1:]:
+                curr_line = flatten([curr.shaded_by(next_stroke) for curr in curr_line])
+                curr_line.append(next_stroke)
+
+            for rs in sorted(curr_line, key=lambda rs:rs.pos.col):
                 sys.stdout.write(str(rs))
-                #sys.stdout.write("(%d, %d)" % (rs.pos.col, rs.pos.col + len(rs.text)))
             sys.stdout.write('\n')
 
 
-#rs1 = Stroke(Pos(1, 5), "123456789", CharColor((255,255,254), (127,127,127)))
-#rs2 = Stroke(Pos(1, 6), "  ", CharColor((255,255,254)))
-#lis = rs1.shaded_by(rs2)
-#lis.append(rs2)
-#lis.sort(key=lambda e:e.pos.col)
-#for l in lis:
-#    sys.stdout.write(str(l))
+class Canvas(Rect):
 
-rect1 = Rect(Pos(0,0), Pos(20, 30), "aaaaaa", CharColor((0,0,0), (127, 127, 127)))
-rect2 = Rect(Pos(1,1), Pos(18, 28), "aaaaaa", CharColor((0,0,0), (200, 200, 200)))
-rect3 = Rect(Pos(1,1), Pos(16, 26), "aaaaaa", CharColor((0,0,0), (255, 255, 255)))
+    def __init__(self):
+        rows, cols = os.popen('stty size', 'r').read().split()
+        size = Pos(int(rows), int(cols)-1)
+        color = CharColor()
 
-rect2.add_child(rect3)
-rect1.add_child(rect2)
-rect1.draw()
+        Rect.__init__(self, Pos(0, 0), size, "", color)
+        self.cursor = Pos(0, 0)
+
+
+
+class Grid(Rect):
+
+    def __init__(self,
+                 pos=Pos(0, 0),
+                 table=[[]],
+                 grid_size=Pos(3, 3),
+                 back_color = CharColor((255, 255, 255), (127, 127, 127))):
+
+        max_cell_size = 0
+        for line in table:
+            for cell, _ in line:
+                if max_cell_size < len(cell):
+                    max_cell_size = len(cell)
+        grid_width = max_cell_size + 2 if max_cell_size + 2 > grid_size.col else grid_size.col
+        grid_size = Pos(grid_size.row, max_cell_size + 2)
+
+        table_size = Pos(len(table), len(table[0])) * grid_size
+        #print table_size
+
+        Rect.__init__(self, Pos(0, 0), table_size, "", back_color)
+
+
+        for row, line in enumerate(table):
+            for col, (cell, color) in enumerate(line):
+                cell_pos = grid_size * Pos(row, col)
+                self.add_child(Rect(cell_pos, grid_size, cell, color))
+
+class Heatmap(Grid):
+
+    def __init__(self,
+                 pos=Pos(0, 0),
+                 table=[[]],
+                 grid_size=Pos(3, 3),
+                 color_scheme="Plum",
+                 back_color = CharColor()):
+
+        minval = min([min(l) for l in table])
+        maxval = max([max(l) for l in table])
+
+        def table_item(cell, min_val, max_val, color_scheme):
+            return ("%1.2f" % c, full_color(color_scheme, c, minval, maxval))
+
+        table = [[ table_item(c, minval, maxval, color_scheme) for c in line] for line in table]
+        Grid.__init__(self, Pos(0, 0), table, grid_size)
+
+
+class Frame(Rect):
+
+    corner_styles = {
+        'rect' : ()
+    }
+
+    def __init__(self,
+                 pos=Pos(0, 0),
+                 rect=Rect(),
+                 frame_sides = ('left', 'right', 'top', 'bottom'),
+                 tick_rep = Pos(1, 1),
+                 tick_off = Pos(1, 1),
+                 corner_style = 'rect'
+                 ):
+        pass
+
+if __name__ == "__main__":
+
+    grid = np.random.random_sample(((12, 14)))
+
+    canvas = Canvas()
+    heat_map = Heatmap(table=grid.tolist())
+    rect     = Rect(Pos(0, 0), Pos(40, 90))
+    rect.add_child(heat_map)
+    canvas.add_child(rect)
+    canvas.draw()

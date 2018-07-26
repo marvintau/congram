@@ -430,11 +430,8 @@ class Canvas:
 if __name__ == "__main__":
     curr_time = time.time()
     c = Canvas()
-    grid = np.random.random_sample(((7, 10)))
-    hist = np.random.random_sample(((15, 1)))
+    grid = np.random.random_sample(((12, 14)))
     c.add_text("This is a heatmap example", CharColor(color_func["Plum"](0.9)))
     c.add_heatmap(grid.tolist(), color_func["Plum"])
-    # c.add_text("This is a histogram example", CharColor(color_func["BlueGreenYellow"](0.9)))
-    print time.time() - curr_time
-    #c.add_hist(grid.tolist(), color_func["BlueGreenYellow"])
     c.render(True)
+    print time.time() - curr_time
