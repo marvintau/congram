@@ -41,7 +41,7 @@ color_func = {
 def full_color(color_scheme_name, val, minval, maxval):
     normed_val = (val-minval)/(maxval-minval)
     color = color_func[color_scheme_name](normed_val)
-    return CharColor(color*2, color)
+    return CharColor(color + 127, color)
 
 
 def ranged_color(color_func, val, minval, maxval):
@@ -59,7 +59,7 @@ class Pos:
         if type(pos_time) is tuple:
             return Pos(self.row * pos_time[0], self.col * pos_time[1])
         else:
-            return Pos(self.row * pos_time.row, self.col * pos_time.col)
+            return Pos(int(self.row * pos_time.row), int(self.col * pos_time.col))
 
     def __str__(self):
         return "{%d, %d}" % (self.row, self.col)
@@ -225,7 +225,7 @@ class Rect:
                  pos=Pos(0, 0),
                  size=Pos(10, 20),
                  text="text",
-                 color=CharColor((127, 127, 127), (240, 240, 240))):
+                 color=CharColor((240, 240, 240), (20, 20, 20))):
 
         self.pos   = pos
         self.size  = size
@@ -242,7 +242,8 @@ class Rect:
         child_bottom_right.shallower_than(self_bottom_right):
             self.children.append(child)
 
-    def render(self, pos):
+    ### Override this for more effective rendering
+    def render_rect(self, pos):
 
         strokes = []
 
@@ -254,6 +255,12 @@ class Rect:
                 stroke_text = "".ljust(self.size.col, " ")
             stroke_pos = self.pos + pos + Pos(line, 0)
             strokes.append(Stroke(stroke_pos, stroke_text, self.color))
+
+        return strokes
+
+    def render(self, pos):
+
+        strokes = self.render_rect(pos)
 
         for child in self.children:
             strokes.extend(child.render(self.pos + pos))
@@ -272,15 +279,16 @@ class Rect:
                 curr_line.append(next_stroke)
 
             for rs in sorted(curr_line, key=lambda rs:rs.pos.col):
-                sys.stdout.write(str(rs))
+                sys.stdout.write(unicode(rs))
             sys.stdout.write('\n')
+            sys.stdout.flush()
 
 
 class Canvas(Rect):
 
     def __init__(self):
         rows, cols = os.popen('stty size', 'r').read().split()
-        size = Pos(int(rows), int(cols)-1)
+        size = Pos(int(rows)-1, int(cols))
         color = CharColor()
 
         Rect.__init__(self, Pos(0, 0), size, "", color)
@@ -305,15 +313,14 @@ class Grid(Rect):
         grid_size = Pos(grid_size.row, max_cell_size + 2)
 
         table_size = Pos(len(table), len(table[0])) * grid_size
-        #print table_size
 
         Rect.__init__(self, Pos(0, 0), table_size, "", back_color)
-
 
         for row, line in enumerate(table):
             for col, (cell, color) in enumerate(line):
                 cell_pos = grid_size * Pos(row, col)
                 self.add_child(Rect(cell_pos, grid_size, cell, color))
+
 
 class Heatmap(Grid):
 
@@ -321,7 +328,7 @@ class Heatmap(Grid):
                  pos=Pos(0, 0),
                  table=[[]],
                  grid_size=Pos(3, 3),
-                 color_scheme="Plum",
+                 color_scheme="Sandy",
                  back_color = CharColor()):
 
         minval = min([min(l) for l in table])
@@ -333,30 +340,79 @@ class Heatmap(Grid):
         table = [[ table_item(c, minval, maxval, color_scheme) for c in line] for line in table]
         Grid.__init__(self, Pos(0, 0), table, grid_size)
 
-
 class Frame(Rect):
-
-    corner_styles = {
-        'rect' : ()
-    }
 
     def __init__(self,
                  pos=Pos(0, 0),
                  rect=Rect(),
                  frame_sides = ('left', 'right', 'top', 'bottom'),
+                 frame_margin = Pos(2, 4),
                  tick_rep = Pos(1, 1),
                  tick_off = Pos(1, 1),
-                 corner_style = 'rect'
+                 corner_style = 'round'
                  ):
-        pass
+
+        Rect.__init__(self, text="", size=rect.size + frame_margin)
+
+        self.frame_margin = frame_margin
+        self.frame_sides = frame_sides
+        rect.pos = rect.pos + frame_margin * Pos(0.5, 0.5)
+        self.add_child(rect)
+        self.corner_style = corner_style
+
+    def render_rect(self, pos):
+
+        corner_styles = {
+            'rect' : [u"┌", u"└", u"┘", u"┐"],
+            'round': [u"╭", u"╰", u"╯", u"╮"]
+        }
+        corners = corner_styles[self.corner_style]
+
+        HORI_BAR = u"─"
+        VERT_BAR = u"│"
+        hori_tick = u"┴"
+        vert_tick = u"├"
+
+        size = self.size + Pos(-1, -1)
+        pos = self.pos + pos
+        margin = self.frame_margin * Pos(0.5, 0.5)
+
+        strokes = []
+
+        ### fill up the background
+        for line in range(0, size.row+1):
+            strokes.append(Stroke(pos+Pos(line, 0), " "*size.col, self.color))
+
+        ### top and bottom axes
+        if 'top' in self.frame_sides:
+            strokes.append(Stroke(pos, HORI_BAR * size.col, self.color))
+        if 'bottom' in self.frame_sides:
+            strokes.append(Stroke(pos+Pos(size.row,0), HORI_BAR * size.col, self.color))
+
+        ### left and right axes
+        if 'left' in self.frame_sides:
+            for line in range(1,size.row):
+                strokes.append(Stroke(Pos(line, 0), VERT_BAR + (" " * (margin.col-1)), self.color))
+
+        if 'right' in self.frame_sides:
+            for line in range(1,size.row):
+                strokes.append(Stroke(Pos(line, size.col - margin.col+1), (" " * (margin.col-1)) + VERT_BAR, self.color))
+
+        ### corners
+        corner_cond = [('left','top'),('left', 'bottom'), ('right','bottom'), ('right', 'top')]
+        for corner, char, (cond0, cond1) in zip(size.corners(), corners, corner_cond):
+            if cond0 in self.frame_sides or cond1 in self.frame_sides:
+                strokes.append(Stroke(pos+corner, char, self.color))
+
+        return strokes
+
 
 if __name__ == "__main__":
 
-    grid = np.random.random_sample(((12, 14)))
+    grid = np.random.random_sample(((8, 10)))
 
     canvas = Canvas()
     heat_map = Heatmap(table=grid.tolist())
-    rect     = Rect(Pos(0, 0), Pos(40, 90))
-    rect.add_child(heat_map)
-    canvas.add_child(rect)
+    frame    = Frame(rect=heat_map, frame_sides=('left', 'right'))
+    canvas.add_child(frame)
     canvas.draw()
