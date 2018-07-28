@@ -41,7 +41,7 @@ color_func = {
 def full_color(color_scheme_name, val, minval, maxval):
     normed_val = (val-minval)/(maxval-minval)
     color = color_func[color_scheme_name](normed_val)
-    return CharColor(color + 127, color)
+    return FullColor(color + 127, color)
 
 
 def ranged_color(color_func, val, minval, maxval):
@@ -110,7 +110,7 @@ class Color:
         return "{%d, %d, %d}" % (self.r, self.g, self.b)
 
 
-class CharColor:
+class FullColor:
     def __init__(self, fore=None, back=None):
 
         if fore is None:
@@ -130,26 +130,26 @@ class CharColor:
     def __add__(self, inc):
         if type(inc) == tuple:
             if len(inc) == 2:
-                return CharColor(self.fore + inc[0], self.back + inc[1])
+                return FullColor(self.fore + inc[0], self.back + inc[1])
             elif len(inc) == 3:
-                return CharColor(self.fore + inc, self.back + inc)
+                return FullColor(self.fore + inc, self.back + inc)
             else:
                 raise TypeError("operand type must be tuple")
         elif type(inc) is int:
-            return CharColor(self.fore + inc, self.back + inc)
+            return FullColor(self.fore + inc, self.back + inc)
         else:
             raise TypeError("operand type must be tuple")
 
     def __mul__(self, inc):
         if type(inc) == tuple:
             if len(inc) == 2:
-                return CharColor(self.fore * inc[0], self.back * inc[1])
+                return FullColor(self.fore * inc[0], self.back * inc[1])
             elif len(inc) == 3:
-                return CharColor(self.fore * inc, self.back * inc)
+                return FullColor(self.fore * inc, self.back * inc)
             else:
                 raise TypeError("operand type must be tuple")
         elif type(inc) is int:
-            return CharColor(self.fore * inc, self.back * inc)
+            return FullColor(self.fore * inc, self.back * inc)
         else:
             raise TypeError("operand type must be tuple")
 
@@ -225,7 +225,7 @@ class Rect:
                  pos=Pos(0, 0),
                  size=Pos(10, 20),
                  text="text",
-                 color=CharColor((240, 240, 240), (20, 20, 20))):
+                 color=FullColor((240, 240, 240), (20, 20, 20))):
 
         self.pos   = pos
         self.size  = size
@@ -289,7 +289,7 @@ class Canvas(Rect):
     def __init__(self):
         rows, cols = os.popen('stty size', 'r').read().split()
         size = Pos(int(rows)-1, int(cols))
-        color = CharColor()
+        color = FullColor()
 
         Rect.__init__(self, Pos(0, 0), size, "", color)
         self.cursor = Pos(0, 0)
@@ -302,7 +302,7 @@ class Grid(Rect):
                  pos=Pos(0, 0),
                  table=[[]],
                  grid_size=Pos(3, 3),
-                 back_color = CharColor((255, 255, 255), (127, 127, 127))):
+                 back_color = FullColor((255, 255, 255), (127, 127, 127))):
 
         max_cell_size = 0
         for line in table:
@@ -329,7 +329,7 @@ class Heatmap(Grid):
                  table=[[]],
                  grid_size=Pos(3, 3),
                  color_scheme="Sandy",
-                 back_color = CharColor()):
+                 back_color = FullColor()):
 
         minval = min([min(l) for l in table])
         maxval = max([max(l) for l in table])
@@ -345,20 +345,24 @@ class Frame(Rect):
     def __init__(self,
                  pos=Pos(0, 0),
                  rect=Rect(),
-                 frame_sides = ('left', 'right', 'top', 'bottom'),
+                 sides = ('left', 'right', 'top', 'bottom'),
+                 ticks = ('left', 'bottom'),
                  frame_margin = Pos(2, 4),
-                 tick_rep = Pos(1, 1),
-                 tick_off = Pos(1, 1),
+                 tick_rep = Pos(3, 6),
+                 tick_off = Pos(1, 5),
                  corner_style = 'round'
                  ):
 
         Rect.__init__(self, text="", size=rect.size + frame_margin)
 
         self.frame_margin = frame_margin
-        self.frame_sides = frame_sides
+        self.sides = sides
+        self.ticks = ticks
         rect.pos = rect.pos + frame_margin * Pos(0.5, 0.5)
         self.add_child(rect)
         self.corner_style = corner_style
+        self.tick_rep = tick_rep
+        self.tick_off = tick_off
 
     def render_rect(self, pos):
 
@@ -373,10 +377,13 @@ class Frame(Rect):
         hori_tick = u"┴"
         vert_tick = u"├"
 
+
         size = self.size + Pos(-1, -1)
         pos = self.pos + pos
         margin = self.frame_margin * Pos(0.5, 0.5)
 
+        hori_tick_pos = [p for p in range(size.col) if (p - self.tick_off.col) % self.tick_rep.col == 0]
+        print hori_tick_pos
         strokes = []
 
         ### fill up the background
@@ -384,24 +391,28 @@ class Frame(Rect):
             strokes.append(Stroke(pos+Pos(line, 0), " "*size.col, self.color))
 
         ### top and bottom axes
-        if 'top' in self.frame_sides:
+        if 'bottom' in self.sides:
+            bottom_str = HORI_BAR * size.col
+            if 'bottom' in self.ticks:
+                for i in hori_tick_pos:
+                    bottom_str = bottom_str[:i] + hori_tick + bottom_str[i+1:]
+            strokes.append(Stroke(pos+Pos(size.row,0), bottom_str, self.color))
+        if 'top' in self.sides:
             strokes.append(Stroke(pos, HORI_BAR * size.col, self.color))
-        if 'bottom' in self.frame_sides:
-            strokes.append(Stroke(pos+Pos(size.row,0), HORI_BAR * size.col, self.color))
 
         ### left and right axes
-        if 'left' in self.frame_sides:
+        if 'left' in self.sides:
             for line in range(1,size.row):
                 strokes.append(Stroke(Pos(line, 0), VERT_BAR + (" " * (margin.col-1)), self.color))
 
-        if 'right' in self.frame_sides:
+        if 'right' in self.sides:
             for line in range(1,size.row):
                 strokes.append(Stroke(Pos(line, size.col - margin.col+1), (" " * (margin.col-1)) + VERT_BAR, self.color))
 
         ### corners
         corner_cond = [('left','top'),('left', 'bottom'), ('right','bottom'), ('right', 'top')]
         for corner, char, (cond0, cond1) in zip(size.corners(), corners, corner_cond):
-            if cond0 in self.frame_sides or cond1 in self.frame_sides:
+            if cond0 in self.sides or cond1 in self.sides:
                 strokes.append(Stroke(pos+corner, char, self.color))
 
         return strokes
@@ -413,6 +424,6 @@ if __name__ == "__main__":
 
     canvas = Canvas()
     heat_map = Heatmap(table=grid.tolist())
-    frame    = Frame(rect=heat_map, frame_sides=('left', 'right'))
+    frame    = Frame(rect=heat_map, ticks=('bottom'))
     canvas.add_child(frame)
     canvas.draw()
